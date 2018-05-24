@@ -1,9 +1,13 @@
-package com.tes4x.exp.ss4j.client
+package com.test4x.ss4j.client
 
-import com.tes4x.exp.ss4j.common.TCPBridgeHandler
+import com.test4x.ss4j.common.DecryptHandler
+import com.test4x.ss4j.common.EncryptHandler
+import com.test4x.ss4j.common.InitConMessage
+import com.test4x.ss4j.common.TCPBridgeHandler
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.*
+import io.netty.channel.epoll.EpollSocketChannel
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioDatagramChannel
@@ -17,38 +21,55 @@ import org.slf4j.LoggerFactory
 import java.net.InetSocketAddress
 
 @ChannelHandler.Sharable
-class SS4JClientHandler : SimpleChannelInboundHandler<DefaultSocks5CommandRequest>() {
+class SS4JClientHandler(private val epoll: Boolean = false) : SimpleChannelInboundHandler<DefaultSocks5CommandRequest>() {
 
     private val logger = LoggerFactory.getLogger(SS4JClientHandler::class.java)
+
 
     override fun channelRead0(chc: ChannelHandlerContext, msg: DefaultSocks5CommandRequest) {
         if (msg.type() == Socks5CommandType.CONNECT) {
             val bootstrap = Bootstrap()
             bootstrap.group(chc.channel().eventLoop())
-                    .channel(NioSocketChannel::class.java)
+                    .channel(if (epoll) EpollSocketChannel::class.java else NioSocketChannel::class.java)
                     .option(ChannelOption.TCP_NODELAY, true)
+                    .option(ChannelOption.SO_KEEPALIVE, true)
                     .handler(object : ChannelInitializer<SocketChannel>() {
                         override fun initChannel(ch: SocketChannel) {
                             //将SS4J转发给Client
-                            ch.pipeline().addLast(TCPBridgeHandler(chc.channel()))
-                                    .addLast(Socks5ClientEncoder.DEFAULT)
+                            ch.pipeline()
+                                    .addLast(LoggingHandler(LogLevel.DEBUG))
+                                    .addLast(EncryptHandler())
+                                    .addLast(DecryptHandler())
+                                    .addLast("remote2client", TCPBridgeHandler(chc.channel())) //入站 转发给client
+                            //这儿需要啥？
+                            //需要一个入站的解密，ss4j -> 解密 -> socks5Message -> 转发给client （decode留在chc的做）
+                            //需要一个出站的加密，client -> encode -> 加密 -> ss4j
                         }
                     })
-            logger.trace("连接SS4J服务器")
+//            val future = bootstrap.connect("172.22.3.233", 12080)//todo just for test
             val future = bootstrap.connect("127.0.0.1", 12080)//todo just for test
-            future.addListener(object : ChannelFutureListener {
-                override fun operationComplete(cfl: ChannelFuture) {
-                    if (cfl.isSuccess) {
-                        logger.trace("连接SS4J服务器成功")
-                        chc.pipeline()
-                                .addLast(TCPBridgeHandler(cfl.channel()))
-                        chc.fireChannelRead(msg)
-                    } else {
-                        logger.trace("连接SS4J服务器失败")
-                        chc.writeAndFlush(DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, Socks5AddressType.IPv4))
+//            val future = bootstrap.connect("sgp.test4x.com", 12080)//todo just for test
+//            val future = bootstrap.connect("jp.test4x.com", 12080)//todo just for test
+            val channelFutureListener = ChannelFutureListener { cfl ->
+                if (cfl.isSuccess) {
+                    chc.pipeline()
+                            .addLast("client2remote", TCPBridgeHandler(cfl.channel()))
+                    val byteBuf = Unpooled.buffer()
+                    InitConMessage(msg.dstAddrType(), msg.dstAddr(), msg.dstPort()).write(byteBuf)
+                    cfl.channel().writeAndFlush(byteBuf).addListener {
+                        if (it.isSuccess) {
+                            chc.writeAndFlush(DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv4))
+                        } else {
+                            logger.error("连接SS4J服务器失败 {}", cfl.cause())
+                            chc.writeAndFlush(DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, Socks5AddressType.IPv4))
+                        }
                     }
+                } else {
+                    logger.error("连接SS4J服务器失败 {}", cfl.cause())
+                    chc.writeAndFlush(DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, Socks5AddressType.IPv4))
                 }
-            })
+            }
+            future.addListener(channelFutureListener)
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             logger.trace("UDP无需连接目标服务器")
             val udpServer = Bootstrap()
@@ -124,12 +145,4 @@ class SS4JClientHandler : SimpleChannelInboundHandler<DefaultSocks5CommandReques
         }
     }
 
-    override fun channelInactive(ctx: ChannelHandlerContext) {
-        ctx.close()
-    }
-
-    override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
-        ctx.close()
-//        super.exceptionCaught(ctx, cause)
-    }
 }

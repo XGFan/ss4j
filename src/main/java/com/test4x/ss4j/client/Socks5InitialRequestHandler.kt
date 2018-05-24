@@ -1,4 +1,4 @@
-package com.tes4x.exp.ss4j.client
+package com.test4x.ss4j.client
 
 import io.netty.channel.ChannelHandler
 import io.netty.channel.ChannelHandlerContext

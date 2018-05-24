@@ -1,4 +1,4 @@
-package com.tes4x.exp.ss4j.common
+package com.test4x.ss4j.common
 
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
@@ -11,25 +11,28 @@ class TCPBridgeHandler(private val channel: Channel) : ChannelInboundHandlerAdap
 
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
-        logger.trace("Forward {} to {}", ctx.channel(), channel)
         val writeAndFlush: ChannelFuture = channel.writeAndFlush(msg)
         writeAndFlush.addListener {
             if (it.isSuccess) {
-                logger.trace("forward success")
             } else {
-                logger.trace("forward fail")
+                logger.error("forward fail {}", it.cause())
                 throw it.cause()
             }
         }
     }
 
     override fun channelInactive(ctx: ChannelHandlerContext) {
+        logger.debug("${ctx.name()} inactive")
         channel.close()
+        ctx.close()
+        ctx.fireChannelInactive()
     }
 
+    override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
+        logger.debug("${ctx.name()} exception")
+        channel.close()
+        ctx.close()
+        ctx.fireExceptionCaught(cause)
+    }
 
-//    override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
-////        logger.error("", cause)
-//        channel.close()
-//    }
 }

@@ -1,0 +1,13 @@
+{
+    "primaryKeyId": 566985755,
+    "key": [{
+        "keyData": {
+            "typeUrl": "type.googleapis.com/google.crypto.tink.AesCtrHmacStreamingKey",
+            "keyMaterialType": "SYMMETRIC",
+            "value": "Eg0IgCAQEBgDIgQIAxAgGhCy0RAknOwjOTapY5QEdlJR"
+        },
+        "outputPrefixType": "RAW",
+        "keyId": 566985755,
+        "status": "ENABLED"
+    }]
+}
