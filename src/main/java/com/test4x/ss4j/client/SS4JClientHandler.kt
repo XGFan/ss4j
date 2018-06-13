@@ -1,9 +1,10 @@
 package com.test4x.ss4j.client
 
-import com.test4x.ss4j.common.DecryptHandler
-import com.test4x.ss4j.common.EncryptHandler
 import com.test4x.ss4j.common.InitConMessage
+import com.test4x.ss4j.common.SS4JConfig
 import com.test4x.ss4j.common.TCPBridgeHandler
+import com.test4x.ss4j.common.aes.DecryptHandler
+import com.test4x.ss4j.common.aes.EncryptHandler
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.*
@@ -21,9 +22,10 @@ import org.slf4j.LoggerFactory
 import java.net.InetSocketAddress
 
 @ChannelHandler.Sharable
-class SS4JClientHandler(private val epoll: Boolean = false) : SimpleChannelInboundHandler<DefaultSocks5CommandRequest>() {
+class SS4JClientHandler(private val epoll: Boolean = false, val config: SS4JConfig) : SimpleChannelInboundHandler<DefaultSocks5CommandRequest>() {
 
     private val logger = LoggerFactory.getLogger(SS4JClientHandler::class.java)
+    val encryptHandler = EncryptHandler(config)
 
 
     override fun channelRead0(chc: ChannelHandlerContext, msg: DefaultSocks5CommandRequest) {
@@ -37,23 +39,21 @@ class SS4JClientHandler(private val epoll: Boolean = false) : SimpleChannelInbou
                         override fun initChannel(ch: SocketChannel) {
                             //将SS4J转发给Client
                             ch.pipeline()
-                                    .addLast(LoggingHandler(LogLevel.DEBUG))
-                                    .addLast(EncryptHandler())
-                                    .addLast(DecryptHandler())
-                                    .addLast("remote2client", TCPBridgeHandler(chc.channel())) //入站 转发给client
+//                                    .addLast(LoggingHandler(LogLevel.DEBUG))
+                                    .addLast(encryptHandler)
+                                    .addLast(DecryptHandler(config))
+                                    .addLast("server2user", TCPBridgeHandler(chc.channel())) //入站 转发给client
                             //这儿需要啥？
                             //需要一个入站的解密，ss4j -> 解密 -> socks5Message -> 转发给client （decode留在chc的做）
                             //需要一个出站的加密，client -> encode -> 加密 -> ss4j
                         }
                     })
-//            val future = bootstrap.connect("172.22.3.233", 12080)//todo just for test
-            val future = bootstrap.connect("127.0.0.1", 12080)//todo just for test
-//            val future = bootstrap.connect("sgp.test4x.com", 12080)//todo just for test
-//            val future = bootstrap.connect("jp.test4x.com", 12080)//todo just for test
+
+            val future = bootstrap.connect(config.serverHost, config.randomPort)
             val channelFutureListener = ChannelFutureListener { cfl ->
                 if (cfl.isSuccess) {
                     chc.pipeline()
-                            .addLast("client2remote", TCPBridgeHandler(cfl.channel()))
+                            .addLast("user2server", TCPBridgeHandler(cfl.channel()))
                     val byteBuf = Unpooled.buffer()
                     InitConMessage(msg.dstAddrType(), msg.dstAddr(), msg.dstPort()).write(byteBuf)
                     cfl.channel().writeAndFlush(byteBuf).addListener {

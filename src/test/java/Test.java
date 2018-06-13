@@ -1,13 +1,3 @@
-import com.google.crypto.tink.*;
-import com.google.crypto.tink.aead.AeadConfig;
-import com.google.crypto.tink.aead.AeadFactory;
-import com.google.crypto.tink.aead.AeadKeyTemplates;
-import com.google.crypto.tink.proto.KeyTemplate;
-import com.test4x.ss4j.common.TinkConf;
-
-import java.io.File;
-import java.security.GeneralSecurityException;
-
 public class Test {
 
 
@@ -33,8 +23,6 @@ public class Test {
 //        // ... or to decrypt a ciphertext.
 //        byte[] decrypted = aead.decrypt(ciphertext, bytes);
 //        System.out.println( new String(decrypted));
-
-
 
 
     }

@@ -1,5 +1,6 @@
 package com.test4x.ss4j.client
 
+import com.test4x.ss4j.common.SS4JConfig
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.channel.Channel
 import io.netty.channel.ChannelInitializer
@@ -16,8 +17,9 @@ import io.netty.handler.codec.socksx.v5.Socks5ServerEncoder
 import org.slf4j.LoggerFactory
 
 fun main(args: Array<String>) {
-    System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "Trace")
+    System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
     val logger = LoggerFactory.getLogger("SS4JClient")
+    val config = SS4JConfig("127.0.0.1", listOf(11000, 11001, 11002), 1280)
 
     val serverBootstrap = ServerBootstrap()
     val boss: EventLoopGroup
@@ -29,14 +31,14 @@ fun main(args: Array<String>) {
         boss = EpollEventLoopGroup()
         worker = EpollEventLoopGroup()
         channelClass = EpollServerSocketChannel::class.java
-        clientHandler = SS4JClientHandler(true)
+        clientHandler = SS4JClientHandler(true, config)
         logger.info("Starting Epoll")
 
     } else {
         boss = NioEventLoopGroup()
         worker = NioEventLoopGroup()
         channelClass = NioServerSocketChannel::class.java
-        clientHandler = SS4JClientHandler(false)
+        clientHandler = SS4JClientHandler(false, config)
         logger.info("Starting Nio")
     }
 
@@ -46,11 +48,11 @@ fun main(args: Array<String>) {
         serverBootstrap
                 .group(boss, worker)
                 .channel(channelClass)
-                .localAddress(11080)
+                .localAddress(config.localPort)
                 .childHandler(object : ChannelInitializer<Channel>() {
                     override fun initChannel(ch: Channel) {
                         ch.pipeline()
-//                                .addLast(ProxyIdleHandler())
+                                .addLast(ProxyIdleHandler())
 //                                        .addLast(LoggingHandler(LogLevel.DEBUG))
                                 .addLast(Socks5ServerEncoder.DEFAULT)
                                 .addLast(Socks5InitialRequestDecoder()) //入站decode
@@ -63,7 +65,7 @@ fun main(args: Array<String>) {
 
                 })
         val future = serverBootstrap.bind().sync()
-        logger.info("SS4J Client Started")
+        logger.info("SS4J Client Started ${config.localPort}")
         future.channel().closeFuture().sync()
     } finally {
         boss.shutdownGracefully()
